@@ -126,6 +126,12 @@ fn codegen_bindings(opts: &SysrootOptions, libbpf_dir: &Path) -> Result<()> {
             "bpf_cgroup_iter_order",
             // NETFILTER
             "nf_inet_hooks",
+            // AF_XDP
+            "xdp_umem_reg",
+            "xdp_ring_offset",
+            "xdp_mmap_offsets",
+            "xdp_desc",
+            "sockaddr_xdp",
         ];
 
         let vars = [
@@ -166,6 +172,9 @@ fn codegen_bindings(opts: &SysrootOptions, libbpf_dir: &Path) -> Result<()> {
             "BPF_RINGBUF_.*",
             // NETFILTER
             "NFPROTO_.*",
+            // AF_XDP (setsockopt names, bind/UMEM/ring flags, and mmap page offsets;
+            // `XDP_FLAGS_.*` above is a subset covering only the XDP attach-mode flags).
+            "XDP_.*",
         ];
 
         for x in &types {

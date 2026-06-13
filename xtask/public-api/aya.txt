@@ -7680,6 +7680,8 @@ impl core::convert::From<aya::sys::SyscallError> for aya::programs::ProgramError
 pub fn aya::programs::ProgramError::from(aya::sys::SyscallError) -> Self
 impl core::convert::From<aya::sys::SyscallError> for aya::programs::links::LinkError
 pub fn aya::programs::links::LinkError::from(aya::sys::SyscallError) -> Self
+impl core::convert::From<aya::sys::SyscallError> for aya::xsk::XskError
+pub fn aya::xsk::XskError::from(aya::sys::SyscallError) -> Self
 impl core::error::Error for aya::sys::SyscallError
 pub fn aya::sys::SyscallError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for aya::sys::SyscallError
@@ -7728,6 +7730,102 @@ pub fn aya::util::kernel_symbols() -> core::result::Result<alloc::collections::b
 pub fn aya::util::nr_cpus() -> core::result::Result<usize, (&'static str, std::io::error::Error)>
 pub fn aya::util::online_cpus() -> core::result::Result<alloc::vec::Vec<u32>, (&'static str, std::io::error::Error)>
 pub fn aya::util::syscall_prefix() -> core::result::Result<&'static str, std::io::error::Error>
+pub mod aya::xsk
+pub enum aya::xsk::XskError
+pub aya::xsk::XskError::FrameOutOfBounds(u32)
+pub aya::xsk::XskError::InvalidRingSize
+pub aya::xsk::XskError::InvalidUmem
+pub aya::xsk::XskError::Syscall(aya::sys::SyscallError)
+impl core::convert::From<aya::sys::SyscallError> for aya::xsk::XskError
+pub fn aya::xsk::XskError::from(aya::sys::SyscallError) -> Self
+impl core::error::Error for aya::xsk::XskError
+pub fn aya::xsk::XskError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for aya::xsk::XskError
+pub fn aya::xsk::XskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for aya::xsk::XskError
+pub fn aya::xsk::XskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for aya::xsk::XskError
+impl core::marker::Send for aya::xsk::XskError
+impl core::marker::Sync for aya::xsk::XskError
+impl core::marker::Unpin for aya::xsk::XskError
+impl core::marker::UnsafeUnpin for aya::xsk::XskError
+impl !core::panic::unwind_safe::RefUnwindSafe for aya::xsk::XskError
+impl !core::panic::unwind_safe::UnwindSafe for aya::xsk::XskError
+pub struct aya::xsk::XskSocket
+impl aya::xsk::XskSocket
+pub fn aya::xsk::XskSocket::complete(&mut self, impl core::ops::function::FnMut(u64)) -> u32
+pub fn aya::xsk::XskSocket::fill(&mut self, impl core::iter::traits::collect::IntoIterator<Item = u32>) -> core::result::Result<u32, aya::xsk::XskError>
+pub fn aya::xsk::XskSocket::kick(&mut self) -> core::result::Result<(), aya::xsk::XskError>
+pub fn aya::xsk::XskSocket::new(aya::xsk::XskUmem, u32, u32, aya::xsk::XskSocketConfig) -> core::result::Result<Self, aya::xsk::XskError>
+pub fn aya::xsk::XskSocket::rx_available(&self) -> u32
+pub fn aya::xsk::XskSocket::rx_peek(&self, u32) -> core::option::Option<&[u8]>
+pub fn aya::xsk::XskSocket::rx_release(&mut self, u32) -> u32
+pub fn aya::xsk::XskSocket::transmit(&mut self, impl core::iter::traits::collect::IntoIterator<Item = (u64, u32)>) -> core::result::Result<u32, aya::xsk::XskError>
+pub fn aya::xsk::XskSocket::tx_frame_mut(&mut self, u64, u32) -> core::option::Option<&mut [u8]>
+pub const fn aya::xsk::XskSocket::umem(&self) -> &aya::xsk::XskUmem
+pub fn aya::xsk::XskSocket::wake_rx(&mut self) -> core::result::Result<(), aya::xsk::XskError>
+impl std::os::fd::owned::AsFd for aya::xsk::XskSocket
+pub fn aya::xsk::XskSocket::as_fd(&self) -> std::os::fd::owned::BorrowedFd<'_>
+impl std::os::fd::raw::AsRawFd for aya::xsk::XskSocket
+pub fn aya::xsk::XskSocket::as_raw_fd(&self) -> std::os::fd::raw::RawFd
+impl core::marker::Freeze for aya::xsk::XskSocket
+impl core::marker::Send for aya::xsk::XskSocket
+impl !core::marker::Sync for aya::xsk::XskSocket
+impl core::marker::Unpin for aya::xsk::XskSocket
+impl core::marker::UnsafeUnpin for aya::xsk::XskSocket
+impl core::panic::unwind_safe::RefUnwindSafe for aya::xsk::XskSocket
+impl core::panic::unwind_safe::UnwindSafe for aya::xsk::XskSocket
+pub struct aya::xsk::XskSocketConfig
+pub aya::xsk::XskSocketConfig::bind_flags: u16
+pub aya::xsk::XskSocketConfig::completion_size: u32
+pub aya::xsk::XskSocketConfig::fill_size: u32
+pub aya::xsk::XskSocketConfig::rx_size: u32
+pub aya::xsk::XskSocketConfig::tx_size: u32
+impl core::clone::Clone for aya::xsk::XskSocketConfig
+pub fn aya::xsk::XskSocketConfig::clone(&self) -> aya::xsk::XskSocketConfig
+impl core::default::Default for aya::xsk::XskSocketConfig
+pub fn aya::xsk::XskSocketConfig::default() -> Self
+impl core::fmt::Debug for aya::xsk::XskSocketConfig
+pub fn aya::xsk::XskSocketConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for aya::xsk::XskSocketConfig
+impl core::marker::Freeze for aya::xsk::XskSocketConfig
+impl core::marker::Send for aya::xsk::XskSocketConfig
+impl core::marker::Sync for aya::xsk::XskSocketConfig
+impl core::marker::Unpin for aya::xsk::XskSocketConfig
+impl core::marker::UnsafeUnpin for aya::xsk::XskSocketConfig
+impl core::panic::unwind_safe::RefUnwindSafe for aya::xsk::XskSocketConfig
+impl core::panic::unwind_safe::UnwindSafe for aya::xsk::XskSocketConfig
+pub struct aya::xsk::XskUmem
+impl aya::xsk::XskUmem
+pub fn aya::xsk::XskUmem::frame_addr(&self, u32) -> core::result::Result<u64, aya::xsk::XskError>
+pub const fn aya::xsk::XskUmem::frame_count(&self) -> u32
+pub const fn aya::xsk::XskUmem::frame_size(&self) -> u32
+pub unsafe fn aya::xsk::XskUmem::new(aya::xsk::XskUmemConfig, core::ptr::non_null::NonNull<[u8]>) -> core::result::Result<Self, aya::xsk::XskError>
+impl core::marker::Send for aya::xsk::XskUmem
+impl core::marker::Freeze for aya::xsk::XskUmem
+impl !core::marker::Sync for aya::xsk::XskUmem
+impl core::marker::Unpin for aya::xsk::XskUmem
+impl core::marker::UnsafeUnpin for aya::xsk::XskUmem
+impl core::panic::unwind_safe::RefUnwindSafe for aya::xsk::XskUmem
+impl core::panic::unwind_safe::UnwindSafe for aya::xsk::XskUmem
+pub struct aya::xsk::XskUmemConfig
+pub aya::xsk::XskUmemConfig::flags: u32
+pub aya::xsk::XskUmemConfig::frame_size: u32
+pub aya::xsk::XskUmemConfig::headroom: u32
+impl core::clone::Clone for aya::xsk::XskUmemConfig
+pub fn aya::xsk::XskUmemConfig::clone(&self) -> aya::xsk::XskUmemConfig
+impl core::default::Default for aya::xsk::XskUmemConfig
+pub fn aya::xsk::XskUmemConfig::default() -> Self
+impl core::fmt::Debug for aya::xsk::XskUmemConfig
+pub fn aya::xsk::XskUmemConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for aya::xsk::XskUmemConfig
+impl core::marker::Freeze for aya::xsk::XskUmemConfig
+impl core::marker::Send for aya::xsk::XskUmemConfig
+impl core::marker::Sync for aya::xsk::XskUmemConfig
+impl core::marker::Unpin for aya::xsk::XskUmemConfig
+impl core::marker::UnsafeUnpin for aya::xsk::XskUmemConfig
+impl core::panic::unwind_safe::RefUnwindSafe for aya::xsk::XskUmemConfig
+impl core::panic::unwind_safe::UnwindSafe for aya::xsk::XskUmemConfig
 pub macro aya::include_bytes_aligned!
 pub enum aya::EbpfError
 pub aya::EbpfError::BtfError(aya_obj::btf::btf::BtfError)

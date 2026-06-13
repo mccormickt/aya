@@ -256,6 +256,7 @@ pub const BPF_F_TEST_RUN_ON_CPU: u32 = 1;
 pub const BPF_F_TEST_XDP_LIVE_FRAMES: u32 = 2;
 pub const BPF_BUILD_ID_SIZE: u32 = 20;
 pub const BPF_OBJ_NAME_LEN: u32 = 16;
+pub const XDP_PACKET_HEADROOM: u32 = 256;
 pub const BPF_TAG_SIZE: u32 = 8;
 pub const BTF_INT_SIGNED: u32 = 1;
 pub const BTF_INT_CHAR: u32 = 2;
@@ -268,6 +269,31 @@ pub const XDP_FLAGS_HW_MODE: u32 = 8;
 pub const XDP_FLAGS_REPLACE: u32 = 16;
 pub const XDP_FLAGS_MODES: u32 = 14;
 pub const XDP_FLAGS_MASK: u32 = 31;
+pub const XDP_SHARED_UMEM: u32 = 1;
+pub const XDP_COPY: u32 = 2;
+pub const XDP_ZEROCOPY: u32 = 4;
+pub const XDP_USE_NEED_WAKEUP: u32 = 8;
+pub const XDP_USE_SG: u32 = 16;
+pub const XDP_UMEM_UNALIGNED_CHUNK_FLAG: u32 = 1;
+pub const XDP_UMEM_TX_SW_CSUM: u32 = 2;
+pub const XDP_RING_NEED_WAKEUP: u32 = 1;
+pub const XDP_MMAP_OFFSETS: u32 = 1;
+pub const XDP_RX_RING: u32 = 2;
+pub const XDP_TX_RING: u32 = 3;
+pub const XDP_UMEM_REG: u32 = 4;
+pub const XDP_UMEM_FILL_RING: u32 = 5;
+pub const XDP_UMEM_COMPLETION_RING: u32 = 6;
+pub const XDP_STATISTICS: u32 = 7;
+pub const XDP_OPTIONS: u32 = 8;
+pub const XDP_OPTIONS_ZEROCOPY: u32 = 1;
+pub const XDP_PGOFF_RX_RING: u32 = 0;
+pub const XDP_PGOFF_TX_RING: u32 = 2147483648;
+pub const XDP_UMEM_PGOFF_FILL_RING: u64 = 4294967296;
+pub const XDP_UMEM_PGOFF_COMPLETION_RING: u64 = 6442450944;
+pub const XDP_TXMD_FLAGS_TIMESTAMP: u32 = 1;
+pub const XDP_TXMD_FLAGS_CHECKSUM: u32 = 2;
+pub const XDP_PKT_CONTD: u32 = 1;
+pub const XDP_TX_METADATA: u32 = 2;
 pub const PERF_EVENT_IOC_ENABLE: u32 = 9216;
 pub const PERF_EVENT_IOC_DISABLE: u32 = 9217;
 pub const PERF_EVENT_IOC_REFRESH: u32 = 9218;
@@ -2139,6 +2165,20 @@ pub enum nlmsgerr_attrs {
     NLMSGERR_ATTR_COOKIE = 3,
     __NLMSGERR_ATTR_MAX = 4,
 }
+pub const XDP_ATTACHED_NONE: _bindgen_ty_93 = _bindgen_ty_93::XDP_ATTACHED_NONE;
+pub const XDP_ATTACHED_DRV: _bindgen_ty_93 = _bindgen_ty_93::XDP_ATTACHED_DRV;
+pub const XDP_ATTACHED_SKB: _bindgen_ty_93 = _bindgen_ty_93::XDP_ATTACHED_SKB;
+pub const XDP_ATTACHED_HW: _bindgen_ty_93 = _bindgen_ty_93::XDP_ATTACHED_HW;
+pub const XDP_ATTACHED_MULTI: _bindgen_ty_93 = _bindgen_ty_93::XDP_ATTACHED_MULTI;
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum _bindgen_ty_93 {
+    XDP_ATTACHED_NONE = 0,
+    XDP_ATTACHED_DRV = 1,
+    XDP_ATTACHED_SKB = 2,
+    XDP_ATTACHED_HW = 3,
+    XDP_ATTACHED_MULTI = 4,
+}
 pub const IFLA_XDP_UNSPEC: _bindgen_ty_94 = 0;
 pub const IFLA_XDP_FD: _bindgen_ty_94 = 1;
 pub const IFLA_XDP_ATTACHED: _bindgen_ty_94 = 2;
@@ -2150,6 +2190,48 @@ pub const IFLA_XDP_HW_PROG_ID: _bindgen_ty_94 = 7;
 pub const IFLA_XDP_EXPECTED_FD: _bindgen_ty_94 = 8;
 pub const __IFLA_XDP_MAX: _bindgen_ty_94 = 9;
 pub type _bindgen_ty_94 = ::core::ffi::c_uint;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sockaddr_xdp {
+    pub sxdp_family: __u16,
+    pub sxdp_flags: __u16,
+    pub sxdp_ifindex: __u32,
+    pub sxdp_queue_id: __u32,
+    pub sxdp_shared_umem_fd: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct xdp_ring_offset {
+    pub producer: __u64,
+    pub consumer: __u64,
+    pub desc: __u64,
+    pub flags: __u64,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct xdp_mmap_offsets {
+    pub rx: xdp_ring_offset,
+    pub tx: xdp_ring_offset,
+    pub fr: xdp_ring_offset,
+    pub cr: xdp_ring_offset,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct xdp_umem_reg {
+    pub addr: __u64,
+    pub len: __u64,
+    pub chunk_size: __u32,
+    pub headroom: __u32,
+    pub flags: __u32,
+    pub tx_metadata_len: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct xdp_desc {
+    pub addr: __u64,
+    pub len: __u32,
+    pub options: __u32,
+}
 impl nf_inet_hooks {
     pub const NF_INET_INGRESS: nf_inet_hooks = nf_inet_hooks::NF_INET_NUMHOOKS;
 }

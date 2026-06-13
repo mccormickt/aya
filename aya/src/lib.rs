@@ -46,6 +46,7 @@ pub mod pin;
 pub mod programs;
 pub mod sys;
 pub mod util;
+pub mod xsk;
 
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 

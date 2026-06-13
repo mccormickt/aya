@@ -4,6 +4,7 @@ mod bpf;
 pub(crate) mod feature_probe;
 mod netlink;
 mod perf_event;
+mod xsk;
 
 #[cfg(test)]
 mod fake;
@@ -24,6 +25,7 @@ pub use netlink::netlink_set_link_up;
 pub(crate) use netlink::*;
 pub(crate) use perf_event::*;
 use thiserror::Error;
+pub(crate) use xsk::*;
 
 pub(crate) type SysResult = Result<i64, (i64, io::Error)>;
 
