@@ -75,22 +75,23 @@ struct XdpMmapOffsetsV1 {
     cr: XdpRingOffsetV1,
 }
 
-/// Translates the pre-5.4 offsets into the current struct, leaving each ring's `flags` zeroed.
-const fn mmap_offsets_from_v1(v1: &XdpMmapOffsetsV1) -> xdp_mmap_offsets {
-    const fn ring(src: &XdpRingOffsetV1) -> xdp_ring_offset {
-        xdp_ring_offset {
+/// Translates the pre-5.4 offsets into the current struct. Each synthetic `flags` offset points to
+/// the unused upper half of the old 64-bit consumer field, as in libbpf.
+fn mmap_offsets_from_v1(v1: &XdpMmapOffsetsV1) -> Option<xdp_mmap_offsets> {
+    fn ring(src: &XdpRingOffsetV1) -> Option<xdp_ring_offset> {
+        Some(xdp_ring_offset {
             producer: src.producer,
             consumer: src.consumer,
             desc: src.desc,
-            flags: 0,
-        }
+            flags: src.consumer.checked_add(size_of::<u32>() as u64)?,
+        })
     }
-    xdp_mmap_offsets {
-        rx: ring(&v1.rx),
-        tx: ring(&v1.tx),
-        fr: ring(&v1.fr),
-        cr: ring(&v1.cr),
-    }
+    Some(xdp_mmap_offsets {
+        rx: ring(&v1.rx)?,
+        tx: ring(&v1.tx)?,
+        fr: ring(&v1.fr)?,
+        cr: ring(&v1.cr)?,
+    })
 }
 
 /// Reads the kernel-assigned ring layout via `getsockopt(SOL_XDP, XDP_MMAP_OFFSETS)`.
@@ -100,8 +101,8 @@ const fn mmap_offsets_from_v1(v1: &XdpMmapOffsetsV1) -> xdp_mmap_offsets {
 /// rings have been sized with [`xsk_setsockopt`].
 ///
 /// Kernels before 5.4 use a smaller `xdp_ring_offset` without the `flags` field; we detect that via
-/// the returned `optlen` and translate the older layout into the current struct, leaving `flags`
-/// zeroed. This mirrors libbpf's `xsk_get_mmap_offsets`.
+/// the returned `optlen` and translate the older layout into the current struct. This mirrors
+/// libbpf's `xsk_get_mmap_offsets`.
 pub(crate) fn xsk_mmap_offsets(fd: BorrowedFd<'_>) -> Result<xdp_mmap_offsets, SyscallError> {
     // Safety: `xdp_mmap_offsets` is composed solely of integers, so a zeroed value is valid.
     let mut offsets = unsafe { mem::zeroed::<xdp_mmap_offsets>() };
@@ -133,7 +134,13 @@ pub(crate) fn xsk_mmap_offsets(fd: BorrowedFd<'_>) -> Result<xdp_mmap_offsets, S
         // Safety: the kernel wrote at least `size_of::<XdpMmapOffsetsV1>()` bytes into `offsets`,
         // and `XdpMmapOffsetsV1` has the same alignment as `xdp_mmap_offsets`.
         let v1 = unsafe { ptr::from_ref(&offsets).cast::<XdpMmapOffsetsV1>().read() };
-        return Ok(mmap_offsets_from_v1(&v1));
+        return mmap_offsets_from_v1(&v1).ok_or_else(|| SyscallError {
+            call: "getsockopt",
+            io_error: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "legacy XDP_MMAP_OFFSETS flags offset overflow",
+            ),
+        });
     }
     Err(SyscallError {
         call: "getsockopt",
@@ -249,7 +256,7 @@ mod tests {
                 desc: 12,
             },
         };
-        let off = mmap_offsets_from_v1(&v1);
+        let off = mmap_offsets_from_v1(&v1).unwrap();
         assert_eq!((off.rx.producer, off.rx.consumer, off.rx.desc), (1, 2, 3));
         assert_eq!((off.tx.producer, off.tx.consumer, off.tx.desc), (4, 5, 6));
         assert_eq!((off.fr.producer, off.fr.consumer, off.fr.desc), (7, 8, 9));
@@ -257,8 +264,25 @@ mod tests {
             (off.cr.producer, off.cr.consumer, off.cr.desc),
             (10, 11, 12)
         );
-        // The `flags` fields have no v1 counterpart and must be zeroed.
-        assert_eq!(off.rx.flags, 0);
-        assert_eq!(off.cr.flags, 0);
+        assert_eq!(off.rx.flags, 2 + size_of::<u32>() as u64);
+        assert_eq!(off.tx.flags, 5 + size_of::<u32>() as u64);
+        assert_eq!(off.fr.flags, 8 + size_of::<u32>() as u64);
+        assert_eq!(off.cr.flags, 11 + size_of::<u32>() as u64);
+    }
+
+    #[test]
+    fn v1_flags_offset_overflow_is_rejected() {
+        let ring = XdpRingOffsetV1 {
+            producer: 0,
+            consumer: u64::MAX,
+            desc: 0,
+        };
+        let v1 = XdpMmapOffsetsV1 {
+            rx: ring,
+            tx: ring,
+            fr: ring,
+            cr: ring,
+        };
+        assert!(mmap_offsets_from_v1(&v1).is_none());
     }
 }
