@@ -8130,15 +8130,15 @@ impl<'a> core::panic::unwind_safe::UnwindSafe for aya::xsk::XskRxFrame<'a>
 pub struct aya::xsk::XskSocket
 impl aya::xsk::XskSocket
 pub fn aya::xsk::XskSocket::complete(&mut self, impl core::ops::function::FnMut(u64)) -> u32
-pub fn aya::xsk::XskSocket::fill(&mut self, impl core::iter::traits::collect::IntoIterator<Item = u32>) -> core::result::Result<u32, aya::xsk::XskError>
+pub unsafe fn aya::xsk::XskSocket::fill(&mut self, impl core::iter::traits::collect::IntoIterator<Item = u32>) -> core::result::Result<u32, aya::xsk::XskError>
 pub fn aya::xsk::XskSocket::kick(&mut self) -> core::result::Result<aya::xsk::XskWakeup, aya::xsk::XskError>
 pub fn aya::xsk::XskSocket::new(aya::xsk::XskUmem, u32, u32, aya::xsk::XskSocketConfig) -> core::result::Result<Self, aya::xsk::XskError>
 pub fn aya::xsk::XskSocket::rx_available(&self) -> u32
 pub fn aya::xsk::XskSocket::rx_frame(&self, u32) -> core::result::Result<core::option::Option<aya::xsk::XskRxFrame<'_>>, aya::xsk::XskError>
 pub fn aya::xsk::XskSocket::rx_peek(&self, u32) -> core::option::Option<&[u8]>
 pub fn aya::xsk::XskSocket::rx_release(&mut self, u32) -> u32
-pub fn aya::xsk::XskSocket::transmit(&mut self, impl core::iter::traits::collect::IntoIterator<Item = (u64, u32)>) -> core::result::Result<u32, aya::xsk::XskError>
-pub fn aya::xsk::XskSocket::tx_frame_mut(&mut self, u64, u32) -> core::option::Option<&mut [u8]>
+pub unsafe fn aya::xsk::XskSocket::transmit(&mut self, impl core::iter::traits::collect::IntoIterator<Item = (u64, u32)>) -> core::result::Result<u32, aya::xsk::XskError>
+pub unsafe fn aya::xsk::XskSocket::tx_frame_mut(&mut self, u64, u32) -> core::option::Option<&mut [u8]>
 pub const fn aya::xsk::XskSocket::umem(&self) -> &aya::xsk::XskUmem
 pub fn aya::xsk::XskSocket::wake_rx(&mut self) -> core::result::Result<aya::xsk::XskWakeup, aya::xsk::XskError>
 impl std::os::fd::owned::AsFd for aya::xsk::XskSocket

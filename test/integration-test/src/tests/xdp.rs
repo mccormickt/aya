@@ -173,7 +173,8 @@ fn af_xdp_native(#[case] socks_name: &str, #[case] prog_name: &str) {
     };
 
     // Hand two frames to the kernel to receive into.
-    assert_eq!(sock.fill([0, 1]).unwrap(), 2);
+    // Safety: frames 0 and 1 are distinct and exclusively owned by this test.
+    assert_eq!(unsafe { sock.fill([0, 1]) }.unwrap(), 2);
 
     socks.set(0, sock.as_raw_fd(), 0).unwrap();
 
@@ -201,8 +202,10 @@ fn af_xdp_native(#[case] socks_name: &str, #[case] prog_name: &str) {
     // TX: write frame 2 (frames 0 and 1 are committed to the FILL ring), transmit it, and confirm
     // the kernel hands the frame back via the COMPLETION ring.
     let tx_addr = sock.umem().frame_addr(2).unwrap();
-    sock.tx_frame_mut(tx_addr, 64).unwrap().fill(0);
-    assert_eq!(sock.transmit([(tx_addr, 64)]).unwrap(), 1);
+    // Safety: frame 2 is exclusively owned by this test and is not in any kernel ring.
+    unsafe { sock.tx_frame_mut(tx_addr, 64) }.unwrap().fill(0);
+    // Safety: frame 2 is distinct, exclusively owned, and remains untouched until completion.
+    assert_eq!(unsafe { sock.transmit([(tx_addr, 64)]) }.unwrap(), 1);
     sock.kick().unwrap();
 
     let mut completed = Vec::new();

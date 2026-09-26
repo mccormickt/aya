@@ -72,7 +72,7 @@ impl Default for XskSocketConfig {
 /// register it with [`xskmap.set(queue, socket.as_raw_fd(), 0)`](crate::maps::XskMap::set).
 ///
 /// Frame ownership is the caller's responsibility: a frame is owned by either the caller or the
-/// kernel, never both.
+/// kernel, never both. Methods that cannot verify this ownership are unsafe.
 ///
 /// - **RX:** hand empty frames to the kernel with [`fill`](Self::fill); read received packets with
 ///   [`rx_peek`](Self::rx_peek) and return their descriptors with [`rx_release`](Self::rx_release).
@@ -219,7 +219,25 @@ impl XskSocket {
     ///
     /// Returns the number of frames actually submitted, which may be fewer than supplied if the
     /// FILL ring fills up.
-    pub fn fill(&mut self, frame_indices: impl IntoIterator<Item = u32>) -> Result<u32, XskError> {
+    ///
+    /// # Safety
+    ///
+    /// Every consumed frame index must identify a distinct frame exclusively owned by the caller.
+    /// A frame must not be present in the FILL or TX ring, contain an RX packet that has not been
+    /// released, or await TX completion. Ownership of each successfully submitted frame transfers
+    /// to the kernel and remains there until an RX descriptor returns it.
+    ///
+    /// ```compile_fail,E0133
+    /// # use aya::xsk::{XskError, XskSocket};
+    /// # fn submit(socket: &mut XskSocket) -> Result<(), XskError> {
+    /// socket.fill([0])?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub unsafe fn fill(
+        &mut self,
+        frame_indices: impl IntoIterator<Item = u32>,
+    ) -> Result<u32, XskError> {
         let free = self.fill.free();
         let mut submitted = 0;
         for index in frame_indices.into_iter().take(free as usize) {
@@ -252,11 +270,23 @@ impl XskSocket {
     /// Returns a mutable view of the frame at UMEM offset `addr` for `len` bytes, into which a
     /// packet to transmit can be written, or `None` if `[addr, addr + len)` is outside the UMEM.
     ///
-    /// The frame must be one the caller currently owns (not enqueued in the FILL or TX rings). Use
-    /// [`XskUmem::frame_addr`] to turn a frame index into an `addr`.
-    pub fn tx_frame_mut(&mut self, addr: u64, len: u32) -> Option<&mut [u8]> {
-        // Safety: `&mut self` proves no other access to the UMEM from our side, and the caller
-        // guarantees this frame is not currently published to the kernel.
+    /// Use [`XskUmem::frame_addr`] to turn a frame index into an `addr`.
+    ///
+    /// # Safety
+    ///
+    /// The entire range must lie in one frame exclusively owned by the caller. The frame must not
+    /// be present in the FILL or TX ring, contain an RX packet that has not been released, or await
+    /// TX completion. No other reference may access the range while the returned slice is alive.
+    ///
+    /// ```compile_fail,E0133
+    /// # use aya::xsk::XskSocket;
+    /// # fn write(socket: &mut XskSocket) {
+    /// let _ = socket.tx_frame_mut(0, 64);
+    /// # }
+    /// ```
+    pub unsafe fn tx_frame_mut(&mut self, addr: u64, len: u32) -> Option<&mut [u8]> {
+        // Safety: the caller guarantees exclusive ownership of this frame and `&mut self` prevents
+        // another access through this socket while the returned slice is alive.
         unsafe { self.umem.frame_bytes_mut(addr, len) }
     }
 
@@ -266,7 +296,23 @@ impl XskSocket {
     /// [`tx_frame_mut`](Self::tx_frame_mut). Returns the number of descriptors actually enqueued,
     /// which may be fewer than supplied if the TX ring fills up. Call [`kick`](Self::kick)
     /// afterwards so the kernel processes them.
-    pub fn transmit(
+    ///
+    /// # Safety
+    ///
+    /// Every consumed descriptor must identify a distinct frame exclusively owned by the caller.
+    /// The described frames must not be present in the FILL or TX ring, contain an RX packet that
+    /// has not been released, or await TX completion. Ownership of the first `n` frames transfers
+    /// to the kernel when this method returns `Ok(n)`; the caller must not access them until matching
+    /// and independently validated completion entries return ownership.
+    ///
+    /// ```compile_fail,E0133
+    /// # use aya::xsk::{XskError, XskSocket};
+    /// # fn submit(socket: &mut XskSocket) -> Result<(), XskError> {
+    /// socket.transmit([(0, 64)])?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub unsafe fn transmit(
         &mut self,
         descs: impl IntoIterator<Item = (u64, u32)>,
     ) -> Result<u32, XskError> {
@@ -308,7 +354,9 @@ impl XskSocket {
     /// Drains the COMPLETION ring, invoking `f` with the UMEM `addr` of each transmitted frame the
     /// kernel has finished with, and returns the number of frames reclaimed.
     ///
-    /// The caller regains ownership of these frames and can reuse them for TX or the FILL ring.
+    /// Completion addresses come from a shared kernel ring and are not validated by this method.
+    /// Before treating a frame as caller-owned, the callback must verify that its address identifies
+    /// a distinct, outstanding TX submission. The frame can then be reused for TX or the FILL ring.
     pub fn complete(&mut self, mut f: impl FnMut(u64)) -> u32 {
         let n = self.completion.available();
         for i in 0..n {
