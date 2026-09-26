@@ -124,6 +124,46 @@ impl Xdp {
         self.attach_to_if_index(if_index, mode)
     }
 
+    /// Attaches the program with `BPF_LINK_CREATE` and returns the owned link.
+    ///
+    /// Unlike [`Self::attach`], this method never falls back to a legacy netlink attachment. The
+    /// caller owns the returned link, and closing it detaches the program without `CAP_NET_ADMIN`.
+    pub fn attach_fd(&self, interface: &str, mode: XdpMode) -> Result<FdLink, ProgramError> {
+        let c_interface = CString::new(interface).unwrap();
+        let if_index = unsafe { libc::if_nametoindex(c_interface.as_ptr()) };
+        if if_index == 0 {
+            return Err(ProgramError::UnknownInterface {
+                name: interface.to_string(),
+            });
+        }
+        self.attach_to_if_index_fd(if_index, mode)
+    }
+
+    /// Attaches the program with `BPF_LINK_CREATE` to an interface index.
+    ///
+    /// This method does not use the legacy netlink fallback. The caller owns the returned link.
+    pub fn attach_to_if_index_fd(
+        &self,
+        if_index: u32,
+        mode: XdpMode,
+    ) -> Result<FdLink, ProgramError> {
+        let prog_fd = self.data.fd()?.as_fd();
+        bpf_link_create(
+            prog_fd,
+            LinkTarget::IfIndex(if_index),
+            self.attach_type,
+            mode.flags(),
+            None,
+        )
+        .map(FdLink::new)
+        .map_err(|io_error| {
+            ProgramError::SyscallError(SyscallError {
+                call: "bpf_link_create",
+                io_error,
+            })
+        })
+    }
+
     /// Attaches the program to the given interface index.
     ///
     /// The returned value can be used to detach, see [`Xdp::detach`].
