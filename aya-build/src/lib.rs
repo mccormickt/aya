@@ -30,7 +30,7 @@ fn target_arch_fixup(target_arch: Cow<'_, str>) -> Cow<'_, str> {
     }
 }
 
-/// Build binary artifacts produced by `packages`.
+/// Build binary artifacts produced by `packages` using each package workspace's lockfile.
 ///
 /// This would be better expressed as one or more [artifact-dependencies][bindeps] but issues such
 /// as:
@@ -139,6 +139,7 @@ pub fn build_ebpf<'a>(
         let mut cmd = cmd("cargo");
         cmd.args([
             "build",
+            "--locked",
             "--package",
             name,
             "--bins",
