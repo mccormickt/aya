@@ -4,6 +4,7 @@ mod bpf;
 pub(crate) mod feature_probe;
 mod netlink;
 mod perf_event;
+mod xsk;
 
 #[cfg(test)]
 mod fake;
@@ -28,6 +29,7 @@ pub use netlink::NetlinkError;
 pub(crate) use netlink::*;
 pub(crate) use perf_event::*;
 use thiserror::Error;
+pub(crate) use xsk::*;
 
 /// A multi-uprobe capability that can be probed independently.
 #[derive(Clone, Copy, Debug)]
