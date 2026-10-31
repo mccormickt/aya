@@ -1,4 +1,7 @@
-use std::{ffi::CString, net::UdpSocket, num::NonZeroU32, time::Duration};
+use std::{
+    ffi::CString, net::UdpSocket, num::NonZeroU32, os::fd::AsRawFd as _, ptr::NonNull,
+    time::Duration,
+};
 
 use assert_matches::assert_matches;
 use aya::{
@@ -8,8 +11,9 @@ use aya::{
     sys::is_devmap_prog_id_supported,
     test_helpers::{NetNsGuard, with_netlink_xdp},
     util::KernelVersion,
+    xsk::{XskError, XskSocket, XskSocketConfig, XskUmem, XskUmemConfig},
 };
-use aya_obj::generated::XDP_FLAGS_SKB_MODE;
+use aya_obj::generated::{XDP_COPY, XDP_FLAGS_SKB_MODE, XDP_USE_NEED_WAKEUP};
 use libbpf_rs::libbpf_sys::bpf_xdp_query_id;
 use object::{Object as _, ObjectSection as _, ObjectSymbol as _, SymbolSection};
 use rstest::rstest;
@@ -93,6 +97,25 @@ fn fd_attach_preserves_existing_program_and_rolls_back() {
     assert_eq!(attached_program(), 0);
 }
 
+/// Asserts that `buf` is an IPv4/UDP packet from `src_port` to `dst_port` carrying `payload`.
+#[track_caller]
+fn assert_udp_packet(buf: &[u8], src_port: u16, dst_port: u16, payload: &[u8]) {
+    let (eth, buf) = buf.split_at(14);
+    assert_eq!(eth[12..14], [0x08, 0x00]); // IP
+    let (ip, buf) = buf.split_at(20);
+    assert_eq!(ip[9], 17); // UDP
+    let (udp, pkt_payload) = buf.split_at(8);
+    let (src, dst) = udp[..4].split_at(2);
+    #[expect(
+        clippy::big_endian_bytes,
+        reason = "packet headers are encoded in network byte order"
+    )]
+    let (src_be, dst_be) = (src_port.to_be_bytes(), dst_port.to_be_bytes());
+    assert_eq!(src, src_be.as_slice()); // Source
+    assert_eq!(dst, dst_be.as_slice()); // Dest
+    assert_eq!(pkt_payload, payload);
+}
+
 #[rstest]
 #[case::legacy("SOCKS", "redirect_sock")]
 #[case::btf("SOCKS_BTF", "redirect_sock_btf")]
@@ -167,21 +190,7 @@ fn af_xdp(#[case] socks_name: &str, #[case] prog_name: &str) {
         &frame.addr.as_ref()[desc.addr as usize..(desc.addr as usize + desc.len as usize)]
     };
 
-    let (eth, buf) = buf.split_at(14);
-    assert_eq!(eth[12..14], [0x08, 0x00]); // IP
-    let (ip, buf) = buf.split_at(20);
-    assert_eq!(ip[9], 17); // UDP
-    let (udp, payload) = buf.split_at(8);
-    let ports = &udp[..4];
-    let (src, dst) = ports.split_at(2);
-    #[expect(
-        clippy::big_endian_bytes,
-        reason = "packet headers are encoded in network byte order"
-    )]
-    let (src_be, dst_be) = (port.to_be_bytes(), 1777u16.to_be_bytes());
-    assert_eq!(src, src_be.as_slice()); // Source
-    assert_eq!(dst, dst_be.as_slice()); // Dest
-    assert_eq!(payload, b"hello AF_XDP");
+    assert_udp_packet(buf, port, 1777, b"hello AF_XDP");
 
     assert_eq!(rx.available(), 1);
     // Removes socket from map, no more packets will be redirected.
@@ -193,6 +202,139 @@ fn af_xdp(#[case] socks_name: &str, #[case] prog_name: &str) {
     socks.set(0, rx.as_raw_fd(), 0).unwrap();
     sock.send_to(b"hello AF_XDP", "127.0.0.1:1777").unwrap();
     assert_eq!(rx.available(), 2);
+}
+
+/// As [`af_xdp`], but exercises aya's native `AF_XDP` socket (`aya::xsk`) instead of `xdpilone`.
+#[rstest]
+#[case::legacy("SOCKS", "redirect_sock")]
+#[case::btf("SOCKS_BTF", "redirect_sock_btf")]
+#[test_attr(test_log::test)]
+fn af_xdp_native(
+    #[case] socks_name: &str,
+    #[case] prog_name: &str,
+    #[values(false, true)] need_wakeup: bool,
+) {
+    let _netns = NetNsGuard::new().unwrap();
+
+    let mut bpf = Ebpf::load(crate::XSK_MAP).unwrap();
+    let mut socks: XskMap<_> = bpf.take_map(socks_name).unwrap().try_into().unwrap();
+
+    let xdp: &mut Xdp = bpf.program_mut(prog_name).unwrap().try_into().unwrap();
+    xdp.load().unwrap();
+    let _xdp_link = xdp.attach_fd(c"lo", XdpMode::default()).unwrap();
+
+    // Four frames: 0 and 1 are handed to the kernel for RX, 2 is used for TX.
+    const SIZE: usize = 4 * 4096;
+
+    // Safety: this creates a dedicated, zero-initialized mapping with no aliases.
+    let alloc = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            SIZE,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+            -1,
+            0,
+        )
+    };
+    assert_ne!(alloc, libc::MAP_FAILED);
+    let alloc = scopeguard::guard(alloc, |alloc| {
+        // Safety: the socket and its rings are dropped first. Pinned pages remain kernel-owned.
+        assert_eq!(unsafe { libc::munmap(alloc, SIZE) }, 0);
+    });
+    let umem = || {
+        let mem = NonNull::slice_from_raw_parts(NonNull::new(*alloc).unwrap().cast(), SIZE);
+        // Safety: each UMEM is used sequentially, and the mapping outlives the socket.
+        unsafe {
+            XskUmem::new(
+                XskUmemConfig {
+                    headroom: 64,
+                    ..XskUmemConfig::default()
+                },
+                mem,
+            )
+            .unwrap()
+        }
+    };
+
+    let ifindex = unsafe { libc::if_nametoindex(c"lo".as_ptr()) };
+    let config = XskSocketConfig {
+        rx_size: 32,
+        tx_size: 32,
+        fill_size: 32,
+        completion_size: 32,
+        bind_flags: (XDP_COPY | if need_wakeup { XDP_USE_NEED_WAKEUP } else { 0 }) as u16,
+    };
+    // A bind failure must release all four mappings and the socket registration.
+    assert!(XskSocket::new(umem(), u32::MAX, 0, config).is_err());
+    let mut sock = match XskSocket::new(umem(), ifindex, 0, config) {
+        Ok(sock) => sock,
+        Err(XskError::Syscall(err)) if err.io_error.raw_os_error() == Some(libc::ENOPROTOOPT) => {
+            eprintln!("skipping test - AF_XDP sockets not available: {err}");
+            return;
+        }
+        Err(err) => panic!("failed to create AF_XDP socket: {err}"),
+    };
+    assert_eq!(
+        unsafe { libc::fcntl(sock.as_raw_fd(), libc::F_GETFD) },
+        libc::FD_CLOEXEC
+    );
+    assert_eq!(sock.rx_available(), 0);
+    assert_eq!(sock.kick().unwrap(), aya::xsk::XskWakeup::Woken);
+    assert_eq!(sock.rx_available(), 0);
+
+    // Hand two frames to the kernel to receive into.
+    // Safety: frames 0 and 1 are distinct and exclusively owned by this test.
+    assert_eq!(unsafe { sock.fill([0, 1]) }.unwrap(), 2);
+
+    socks.set(0, sock.as_raw_fd(), 0).unwrap();
+
+    let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let port = udp.local_addr().unwrap().port();
+    udp.send_to(b"hello AF_XDP", "127.0.0.1:1777").unwrap();
+
+    assert_eq!(sock.rx_available(), 1);
+    assert!(matches!(
+        sock.rx_frame_checked(0, |_| false),
+        Err(XskError::InvalidRxDescriptor)
+    ));
+    let frame = sock
+        .rx_frame_checked(0, |addr| [0, 4096].contains(&addr))
+        .unwrap()
+        .unwrap();
+    assert!([0, 4096].contains(&frame.frame_addr));
+    assert_udp_packet(frame.data, port, 1777, b"hello AF_XDP");
+
+    // Inspecting an RX frame does not consume it, so the descriptor stays available.
+    assert_eq!(sock.rx_available(), 1);
+    // Removes socket from map, no more packets will be redirected.
+    socks.unset(0).unwrap();
+    assert_eq!(sock.rx_available(), 1);
+    udp.send_to(b"hello AF_XDP", "127.0.0.1:1777").unwrap();
+    assert_eq!(sock.rx_available(), 1);
+    // Adds socket to map again, packets will be redirected again.
+    socks.set(0, sock.as_raw_fd(), 0).unwrap();
+    udp.send_to(b"hello AF_XDP", "127.0.0.1:1777").unwrap();
+    assert_eq!(sock.rx_available(), 2);
+
+    // TX: write frame 2 (frames 0 and 1 are committed to the FILL ring), transmit it, and confirm
+    // the kernel hands the frame back via the COMPLETION ring.
+    let tx_addr = sock.umem().frame_addr(2).unwrap();
+    // Safety: frame 2 is exclusively owned by this test and is not in any kernel ring.
+    unsafe { sock.tx_frame_mut(tx_addr, 64) }.unwrap().fill(0);
+    // Safety: frame 2 is distinct, exclusively owned, and remains untouched until completion.
+    assert_eq!(unsafe { sock.transmit([(tx_addr, 64)]) }.unwrap(), 1);
+    sock.kick().unwrap();
+
+    let mut completed = Vec::new();
+    for _ in 0..100 {
+        sock.complete(|addr| completed.push(addr));
+        if !completed.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(completed, [tx_addr]);
 }
 
 #[test_log::test]
