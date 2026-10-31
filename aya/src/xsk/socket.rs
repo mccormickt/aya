@@ -436,10 +436,10 @@ impl std::os::fd::AsFd for XskSocket {
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::NonNull;
+    use std::{os::fd::FromRawFd as _, ptr::NonNull};
 
     use super::*;
-    use crate::xsk::XskUmemConfig;
+    use crate::{MockableFd, xsk::XskUmemConfig};
 
     #[repr(C, align(4096))]
     struct Memory([u8; 4 * 4096]);
@@ -459,7 +459,8 @@ mod tests {
             .unwrap()
         };
         let mut socket = XskSocket {
-            fd: tempfile::tempfile().unwrap().into(),
+            // SAFETY: these tests use only ring memory; the mock descriptor is not closed.
+            fd: unsafe { MockableFd::from_raw_fd(MockableFd::mock_signed_fd()) },
             umem,
             fill,
             completion,

@@ -221,24 +221,24 @@ impl<T> XskRing<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::fd::AsFd as _;
+    use std::os::fd::{AsFd as _, FromRawFd as _};
 
     use super::*;
-    use crate::sys::TEST_MMAP_RET;
+    use crate::{MockableFd, sys::TEST_MMAP_RET};
 
     impl<T> XskRing<T> {
         /// Builds a memory-mapped ring for tests, with the producer/consumer indices and descriptor
         /// array laid out at fixed cache-line-spaced offsets.
-        pub(crate) fn new_test(size: u32) -> (Self, Box<[u64]>) {
+        pub(crate) fn new_test(size: u32) -> (Self, Vec<u64>) {
             const PRODUCER_OFF: u64 = 0;
             const CONSUMER_OFF: u64 = 64;
             const FLAGS_OFF: u64 = 128;
             const DESC_OFF: u64 = 192;
             let len = DESC_OFF as usize + size as usize * size_of::<T>();
-            let mut backing = vec![0u64; len.div_ceil(size_of::<u64>())].into_boxed_slice();
+            let mut backing = vec![0u64; len.div_ceil(size_of::<u64>())];
             TEST_MMAP_RET.with(|ret| *ret.borrow_mut() = backing.as_mut_ptr().cast());
-            let file = tempfile::tempfile().unwrap();
-            file.set_len(len as u64).unwrap();
+            // SAFETY: mmap is mocked, and MockableFd does not close mock descriptors.
+            let file = unsafe { MockableFd::from_raw_fd(MockableFd::mock_signed_fd()) };
             let mmap = MMap::new(file.as_fd(), len, PROT_READ | PROT_WRITE, MAP_SHARED, 0).unwrap();
             TEST_MMAP_RET.with(|ret| *ret.borrow_mut() = std::ptr::null_mut());
             (
@@ -338,7 +338,8 @@ mod tests {
 
     #[test]
     fn invalid_layout_is_rejected_before_mmap() {
-        let file = tempfile::tempfile().unwrap();
+        // SAFETY: validation rejects the layout before mmap; the mock descriptor is not closed.
+        let file = unsafe { MockableFd::from_raw_fd(MockableFd::mock_signed_fd()) };
         let valid = xdp_ring_offset {
             producer: 0,
             consumer: 64,
@@ -378,7 +379,8 @@ mod tests {
 
     #[test]
     fn legacy_layout_has_no_flags_word() {
-        let file = tempfile::tempfile().unwrap();
+        // SAFETY: mmap is mocked, and MockableFd does not close mock descriptors.
+        let file = unsafe { MockableFd::from_raw_fd(MockableFd::mock_signed_fd()) };
         // A non-SMP legacy layout has no padding between the consumer and descriptors.
         let offset = xdp_ring_offset {
             producer: 0,
