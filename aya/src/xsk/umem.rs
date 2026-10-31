@@ -79,7 +79,7 @@ impl XskUmem {
             || len > isize::MAX as usize
             || !len.is_multiple_of(frame_size as usize)
             || u32::try_from(len / frame_size as usize).is_err()
-            || !(mem.as_ptr() as usize).is_multiple_of(page_size())
+            || !mem.as_ptr().addr().is_multiple_of(page_size())
         {
             return Err(XskError::InvalidUmem);
         }
@@ -92,7 +92,7 @@ impl XskUmem {
         // `zeroed` rather than a struct literal keeps this robust to fields that only exist in
         // newer kernel headers (e.g. `tx_metadata_len`).
         let mut reg = unsafe { std::mem::zeroed::<xdp_umem_reg>() };
-        reg.addr = self.mem.as_ptr() as u64;
+        reg.addr = self.mem.as_ptr().expose_provenance() as u64;
         reg.len = self.len as u64;
         reg.chunk_size = self.config.frame_size;
         reg.headroom = self.config.headroom;
