@@ -101,6 +101,37 @@ impl Xdp {
         load_program_with_attach_type(BPF_PROG_TYPE_XDP, *attach_type, data)
     }
 
+    /// Attaches the program with `BPF_LINK_CREATE` and returns the owned link.
+    ///
+    /// Pass a name such as `c"eth0"`, an interface index, or a [`NetworkInterface`].
+    /// Names are resolved in the calling thread's network namespace.
+    ///
+    /// This method does not replace an existing attachment and never falls back to netlink.
+    /// The caller owns the returned link. Closing the last link file descriptor detaches the
+    /// program without `CAP_NET_ADMIN`.
+    pub fn attach_fd<'a>(
+        &self,
+        interface: impl Into<NetworkInterface<'a>>,
+        mode: XdpMode,
+    ) -> Result<FdLink, ProgramError> {
+        let if_index = interface.into().if_index_for_program()?;
+        let prog_fd = self.data.fd()?.as_fd();
+        bpf_link_create(
+            prog_fd,
+            LinkTarget::IfIndex(if_index),
+            self.attach_type,
+            mode.flags(),
+            None,
+        )
+        .map(FdLink::new)
+        .map_err(|io_error| {
+            ProgramError::SyscallError(SyscallError {
+                call: "bpf_link_create",
+                io_error,
+            })
+        })
+    }
+
     /// Attaches the program to an interface specified by name or index.
     ///
     /// Pass a name such as `c"eth0"`, an interface index, or a [`NetworkInterface`].

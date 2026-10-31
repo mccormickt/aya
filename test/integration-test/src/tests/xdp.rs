@@ -60,6 +60,39 @@ fn netlink_attach_to_link_replaces_program() {
     assert_eq!(attached_program(), 0);
 }
 
+#[test_log::test]
+fn fd_attach_preserves_existing_program_and_rolls_back() {
+    let _netns = NetNsGuard::new().unwrap();
+    let if_index = unsafe { libc::if_nametoindex(c"lo".as_ptr()) };
+    assert_ne!(if_index, 0);
+    let attached_program = || {
+        let mut id = 0;
+        // Safety: the output pointer is writable for the duration of this query.
+        assert_eq!(
+            unsafe { bpf_xdp_query_id(if_index as i32, XDP_FLAGS_SKB_MODE as i32, &raw mut id) },
+            0
+        );
+        id
+    };
+    let mut bpf = Ebpf::load(crate::XDP_SEC).unwrap();
+    let xdp: &mut Xdp = bpf.program_mut("xdp_plain").unwrap().try_into().unwrap();
+    xdp.load().unwrap();
+    let program_id = xdp.info().unwrap().id();
+    let link = xdp.attach_fd(c"lo", XdpMode::Skb).unwrap();
+    assert_eq!(attached_program(), program_id);
+    xdp.attach_fd(if_index, XdpMode::Skb).unwrap_err();
+    assert_eq!(attached_program(), program_id);
+    xdp.attach_fd(c"missing-peer", XdpMode::Skb).unwrap_err();
+    drop(link);
+    assert_eq!(attached_program(), 0);
+
+    let link = xdp.attach_fd(if_index, XdpMode::Skb).unwrap();
+    drop(bpf);
+    assert_eq!(attached_program(), program_id);
+    drop(link);
+    assert_eq!(attached_program(), 0);
+}
+
 #[rstest]
 #[case::legacy("SOCKS", "redirect_sock")]
 #[case::btf("SOCKS_BTF", "redirect_sock_btf")]
