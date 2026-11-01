@@ -55,9 +55,9 @@ impl<T: Borrow<MapData>> XskMap<T> {
 impl<T: BorrowMut<MapData>> XskMap<T> {
     /// Sets the `AF_XDP` socket at a given index.
     ///
-    /// When redirecting a packet, the `AF_XDP` socket at `index` will receive the packet. Note
-    /// that it will do so only if the socket is bound to the same queue the packet was received
-    /// on.
+    /// The XDP program selects `index` when redirecting a packet; it does not have to equal the
+    /// socket's bind queue ID. The packet must pass the kernel's device and queue validation,
+    /// including any supported RX queue lease (see [`crate::xsk`]).
     ///
     /// # Errors
     ///

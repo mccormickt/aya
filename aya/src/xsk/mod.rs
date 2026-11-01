@@ -9,13 +9,23 @@
 //!
 //! 1. Allocate page-aligned memory and wrap it in a [`XskUmem`].
 //! 2. Create a [`XskSocket`] with [`XskSocket::new`], binding it to an interface queue.
-//! 3. Register the socket's file descriptor in a [`crate::maps::XskMap`] for the bound queue with
-//!    [`XskMap::set`](crate::maps::XskMap::set).
+//! 3. Register the socket's file descriptor in a [`crate::maps::XskMap`] at the key selected by
+//!    the XDP program with [`XskMap::set`](crate::maps::XskMap::set). The map key does not have to
+//!    equal the socket's bind queue ID.
 //! 4. Load and attach an XDP program that redirects into that map.
 //! 5. For RX, submit frames with [`XskSocket::fill`] and read packets with
 //!    [`XskSocket::rx_peek`] / [`XskSocket::rx_release`]. For TX, write a frame with
 //!    [`XskSocket::tx_frame_mut`], enqueue it with [`XskSocket::transmit`], wake the kernel with
 //!    [`XskSocket::kick`], and reclaim sent frames with [`XskSocket::complete`].
+//!
+//! Socket binding, map registration, and program attachment are separate operations. For RX,
+//! the packet must pass the kernel's device and queue validation, regardless of the map key.
+//! Normally, the packet's device and receive queue must match the socket's bound interface and
+//! queue. Kernels with [RX queue lease validation][lease-validation] can also accept the device
+//! and queue referenced by the bound RX queue's lease. This does not make arbitrary device or
+//! queue combinations valid.
+//!
+//! [lease-validation]: https://github.com/torvalds/linux/blob/9368397fb/net/xdp/xsk.c#L333-L358
 //!
 //! # Scope
 //!

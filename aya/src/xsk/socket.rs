@@ -29,6 +29,9 @@ pub struct XskSocketConfig {
     /// Size of the COMPLETION ring. Required by the kernel at bind time even for RX-only sockets.
     pub completion_size: u32,
     /// Exactly one of `XDP_COPY` or `XDP_ZEROCOPY`, optionally with `XDP_USE_NEED_WAKEUP`.
+    /// The selected mode is required: binding fails if it is not supported, without fallback.
+    /// These flags do not select the XDP program's attachment mode. Generic XDP requires copy
+    /// mode; copy mode can also be used with driver XDP.
     /// Shared UMEM, multi-buffer packets, and automatic mode selection are unsupported.
     pub bind_flags: u16,
 }
@@ -67,9 +70,12 @@ impl Default for XskSocketConfig {
 
 /// An `AF_XDP` socket bound to a single netdev queue.
 ///
-/// To receive, an XDP program must redirect packets into a [`crate::maps::XskMap`] whose entry for
-/// the bound queue holds this socket's raw file descriptor. `XskSocket` implements [`AsRawFd`], so
-/// register it with [`xskmap.set(queue, socket.as_raw_fd(), 0)`](crate::maps::XskMap::set).
+/// To receive, an XDP program must redirect packets into a [`crate::maps::XskMap`] entry that
+/// holds this socket's file descriptor. The map key is selected by the program and need not equal
+/// the bind queue ID. The packet must pass the kernel's device and queue validation, including any
+/// supported RX queue lease (see the [module documentation](crate::xsk)).
+/// `XskSocket` implements [`std::os::fd::AsFd`] and [`AsRawFd`], so register it
+/// with [`xskmap.set(map_key, &socket, 0)`](crate::maps::XskMap::set).
 ///
 /// Frame ownership is the caller's responsibility: a frame is owned by either the caller or the
 /// kernel, never both. Methods that cannot verify this ownership are unsafe.
@@ -105,6 +111,9 @@ impl XskSocket {
     /// `(ifindex, queue_id)`.
     ///
     /// `ifindex` can be obtained from an interface name with `libc::if_nametoindex`.
+    /// This method does not load or attach an XDP program or register the socket in an XSKMAP.
+    /// The caller manages those objects separately. A successful bind does not prove that packets
+    /// can reach the socket through the caller's XDP program and network configuration.
     pub fn new(
         umem: XskUmem,
         ifindex: u32,
